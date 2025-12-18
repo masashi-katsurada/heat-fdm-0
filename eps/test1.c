@@ -1,0 +1,215 @@
+/* exp-heat-2.c */
+/****************************************************************************
+*****************************************************************************
+*
+*                    1次元熱伝導方程式のシミュレーション
+*    
+*****************************************************************************
+*    熱方程式
+*       u  = u              (0<x<1, t>0)
+*        t    xx
+*  に境界条件
+*       u(0,t)=u(1,t)=0     (t>0)
+*  と初期条件
+*       u(x,0)=f(x)         (0≦x≦1)
+*  を課した偏微分方程式の初期値・境界値問題を解く。
+*
+*  このプログラムは 6701 号室ならば
+*     ccx reidai7-1.f
+*  としてコンパイルが出来る。
+*  センターでは東海林先生の ccg でコンパイル出来る（と思う）。
+*
+*****************************************************************************
+*****************************************************************************/
+
+#include <stdio.h>
+#include <math.h>
+
+#define PI      M_PI
+double PI2 = PI * PI;
+#define	MAXN	1000
+
+int main()
+{
+    /* 公式に出てくる意味のある量をおさめる変数等 */
+    double a,b;
+    int N;
+    double lambda, h, tau, Tmax;
+    double u[MAXN+1], unext[MAXN+1];
+    double f();
+    /* プログラムの制御に必要な変数 */
+    int i, j, nstep;
+    double t, Tlimit;
+    double xmin, xmax, ymin, ymax, umin, umax;
+    double exact, exact0(), relerr();
+    int Nstart, Nend, Ntimes;
+    int nfunc = 0;
+    /* */
+    int verbose = 0;
+    int silent = 1;
+    int usegraph = 0;
+    int output_to_file = 1;
+    FILE *ofile;
+    char fname[1024];
+
+    a = 0.0;
+    b = 1.0;
+
+    /* どこまで計算しますか? */
+    printf(" いつまで計算しますか？ Tmax: ");
+    scanf("%lf", &Tmax);
+    printf(" Tmax=%lf\n", Tmax);
+    /* パラメーターλの入力（λ≦1/2 でないと正常な計算は出来ないはず） */
+    printf(" λ=時間刻み幅/空間刻み幅の2乗を入力してください: ");
+    scanf("%lf", &lambda);
+    printf(" λ=%lf\n", lambda);
+    /* 空間変数 x についての分割数 N */
+    printf(" 空間の分割数 Nstart, Nend(<= %d), Ntimes: ", MAXN);
+    scanf("%d %d %d", &Nstart, &Nend, &Ntimes);
+    printf("%d %d %d\n", Nstart, Nend, Ntimes);
+
+    if (verbose) silent = 0;
+
+    if (output_to_file) {
+      printf("filename to write:");
+      scanf("%s", fname);
+      if ((ofile = fopen(fname, "w")) == NULL) {
+	fprintf(stderr, "cannot open %s\n", fname);
+	return 1;
+      }
+      fprintf(ofile, "heat eq. on [0,1], 斉次Dirichlet B.C., f(x)=sin(πx)\n");
+      fprintf(ofile, "explicit 差分法\n");
+      fprintf(ofile, "λ=%f Tmax=%f\n",
+	      lambda, Tmax);
+      fprintf(ofile, "\tN\tu(1/2,%lg)=%lf に対する近似値\t相対誤差(%%)\n",
+	      Tmax, exact0(0.5, Tmax));
+    }
+
+    /* 空間、時間それぞれの刻み幅（格子の間隔）h,τを計算する */
+    for (N = Nstart; N <= Nend; N *= Ntimes) {
+      if (N > 1000)
+	N = 1000;
+      h = (b - a) / N;
+      tau = lambda * h * h;
+
+      if (!silent)
+	printf(" 時間刻み幅=%lf になりました。\n", tau);
+      /* 初期値を設定する。 */
+      for (i = 0; i <= N; i++)
+	u[i] = f(a + i * h, nfunc);
+
+      if (usegraph) {
+	/* fspace に指定するために、初期値の最大値・最小値を求める */
+	maxmin(u, N, &umin, &umax);
+	xmin = a - (b - a) / 10.0;
+	xmax = b + (b - a) / 10.0;
+	ymin = umin - (umax - umin) / 10.0;
+	ymax = umax + (umax - umin) / 10.0;
+	/* グラフィックスの初期化 */
+	openpl();
+	fspace2(xmin, ymin, xmax, ymax);
+	erase();
+	/* 初期値を描く */
+	fmove(a, u[0]);
+	for (i = 1; i <= N; i++)
+	  fcont(a + i * h, u[i]);
+      }
+      /* */
+      Tlimit = Tmax - 0.1 * tau;
+      nstep = 0;
+      t = 0.0;
+      do {
+	/* ここからがメイン・ループ */
+	for (i = 0; i < N; i++)
+	  unext[i]=(1.0-2.0*lambda)*u[i]+lambda*(u[i-1]+u[i+1]);
+	/* Dirichlet境界条件 */
+	unext [0] = 0.0;
+	unext [N] = 0.0;
+	/* 次の繰り返しのため、新しい値をコピーする。 */
+	for (i = 0; i <= N; i++)
+	  u[i] = unext[i];
+	/* */
+	nstep++;
+	t = nstep * tau;
+	/* */
+	if (verbose)
+	  printf("t=%lf, u(0.5,%lf)=%le\n", t, t, u[N/2]);
+	/* 現時点における解uの姿を描く */
+	if (usegraph) {
+	  erase();
+	  fmove(a, u[0]);
+	  for (i = 1; i <= N; i++)
+	    fcont(a + i * h, u[i]);
+	  /* 滑らかに描画するためには、次の行のコメントを外す（遅くなる） */
+	  xsync();
+	}
+      } while (t <= Tlimit);
+
+      /* 画面に表示 */
+      printf("N=%d\n", N);
+      for (i = 1; i <= 5; i++) {
+	exact = exact0(i * 0.1, t);
+	printf(" %f(%4.2lf%%)", u[i*N/10], relerr(exact, u[i*N/10]));
+      }
+      printf("\n");
+
+      /* ファイルに出力 */
+      if (output_to_file)
+	fprintf(ofile, "%4d %9.7f %9.7e\n", N, u[N/2], relerr(exact, u[N/2]));
+    }
+    if (output_to_file)
+      fclose(ofile);
+    if (usegraph) {
+      closepl();
+      printf("マウスをクリックして下さい\n");
+    }
+    return 0;
+}
+
+/***************************************************************
+*     ベクトル u の成分の最小値 min, 最大値 max を求める。     */
+      
+maxmin(u,N,min,max)
+int N;
+double u[];
+double *min,*max;
+{
+    int i;
+    *min = u[0];
+    *max = u[0];
+    for (i = 1; i <= N; i++)
+      if (u[i] < *min) *min = u[i]; else if (u[i] > *max) *max = u[i];
+}
+
+/****************************************************************
+*       初期値 f						*/
+double f(x, nfunc)
+double x;
+int nfunc;
+{
+    switch (nfunc) {
+    case 0:
+      return sin(PI * x);
+      break;
+    case 1:
+      if (x <= 0.5) return x; else return 1.0 - x;
+      break;
+    default:
+      break;
+    }
+}
+
+double exact0(x,t)
+double x,t;
+{
+#ifdef DEBUG
+  printf("%lf\n", exp(- PI2 * t) * sin(PI * x));
+#endif
+  return exp(- PI2 * t) * sin(PI * x);
+}
+
+double relerr(true, approx)
+double true, approx;
+{
+  return fabs((true - approx) / true) * 100.0;
+}
