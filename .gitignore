@@ -3,6 +3,7 @@
 !heat-fdm-0
 
 heat-fdm-0/
+old/
 
 # LaTeX の諸々
 *.aux
